@@ -1,0 +1,4 @@
+[23-Aug-2023 07:07:20 UTC] PHP Fatal error:  Uncaught Error: Class 'Illuminate\Database\Eloquent\Model' not found in /home/ui0kava7ttmv/greatmindstl.com/app/Models/UserInformation.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/ui0kava7ttmv/greatmindstl.com/app/Models/UserInformation.php on line 10
