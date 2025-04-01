@@ -249,13 +249,10 @@
                 </div>
 
                 <!--Modal body-->
-                <div class="modal-body">
-                    <canvas width="640" height="600" class="hidden"></canvas>
-
-                    <p class="text-semibold text-main text-center">
-                        {!! QR::size(300)->generate("http://greatmindstl.com/agent/{$model->employee_number}") !!}
-                    </p>
-                </div>
+                    <div class="modal-body text-center">
+                        <canvas id="qr-canvas" width="300" height="300" class="hidden"></canvas>
+                        <img id="qr-preview" src="" alt="QR Code" style="width: 300px; height: 300px; display: none;">
+                    </div>
 
                 <!--Modal footer-->
                 <div class="modal-footer">
@@ -349,15 +346,45 @@
 
 <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <script>
     let isDownloadClicked = false;
     let employeeNumberValue = "{{ $model->employee_number }}";
+    let currentQrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=220x180&data=" + encodeURIComponent("http://greatmindstl.com/agent/{{ $model->employee_number }}?token={{ $model->latest_qr_token ?? '' }}"); // Global QR URL
 
+    // Initial QR code setup for ID modal using last generated token
+    $('#qr-code-overlay').attr('src', currentQrCodeUrl).show();
+
+    // ID download handler 
     $('#download-id-image').on('click', function(e) {
         e.preventDefault();
         isDownloadClicked = true;
-        captureImage();
+        captureImage(); // Directly capture the current state 
+        console.log('Input value after captureImage:', $('input[name="last_print_date"]').val()); // Monitor this
+        // Capture the current date in YYYY-MM-DD format
+        var currentDate = new Date().toISOString().split('T')[0];
+        
+        // Send AJAX request to update last_print_date
+        $.ajax({
+            url: '{{ route("admin.agents.updateLastPrintDate") }}', // Updated route name
+            method: 'POST',
+            data: {
+                id: '{{ $model->id }}', // Assuming your model has an 'id' field
+                last_print_date: currentDate,
+                _token: '{{ csrf_token() }}' // Laravel CSRF token for security
+            },
+            success: function(response) {
+            console.log('Last print date updated successfully:', response.last_print_date);
+            let $input = $('#last_print_date'); // Use ID instead of name
+            $input.val(response.last_print_date);
+            $input.trigger('change');
+            console.log('Input value after update:', $input.val());
+            },
+            error: function(xhr) {
+                console.error('Error updating last print date:', xhr.responseText);
+            }
+        });
     });
 
     $('#modal-generate_id').on('shown.bs.modal', function () {
@@ -366,7 +393,8 @@
         var profilePictureUrl = "{{ $model->picture }}";
         var employeePosition = "{{ $model->position }}";
         var employeeAddress = "{{ $model->address }}";
-        var qrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=" + encodeURIComponent("http://greatmindstl.com/agent/{{ $model->employee_number }}");
+        var qrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=" + encodeURIComponent("http://greatmindstl.com/agent/{{ $model->employee_number }}?token={{ $model->latest_qr_token ?? '' }}");
+        // document.getElementById('qr-code-overlay').src = qrCodeUrl; // Assuming this is your QR image ID
         var fieldCoordinator = "{{ $model->field_coordinator }}";
         var colorMap = {
             'TISAY': 'red',
@@ -398,20 +426,22 @@
         $('#employee-address-overlay').text(employeeAddress).show();
         $('.field-coordinator-shape-back').css('background-color', positionColor);
         $('#employee-position-overlay').text(displayPosition).show();
+        $('#qr-code-overlay').attr('src', currentQrCodeUrl).show(); // Use the global QR URL
 
+        // Load QR code image for capture
         var qrCodeImage = new Image();
         qrCodeImage.crossOrigin = "anonymous";
         qrCodeImage.onload = function () {
             $('#qr-code-overlay').attr('src', qrCodeImage.src).show();
             console.log("QR code loaded");
-            setTimeout(captureImage, 200);
+            setTimeout(captureImage, 200); // Only auto-capture if not downloading
         };
         qrCodeImage.onerror = function () {
             console.error("Failed to load QR code image.");
             console.log("QR code error");
             setTimeout(captureImage, 500);
         };
-        qrCodeImage.src = qrCodeUrl;
+        qrCodeImage.src = currentQrCodeUrl;
 
         // Front Template Setup
         $('#profile-picture-overlay').attr('src', profilePictureUrl || "{{ asset('assets/image/user/default.jpg') }}").show();
@@ -559,22 +589,21 @@ function captureImage() {
     </div>
 </div>
 
-                            <p class="text-main text-bold">Company Information</p>
-                            <hr>
+<p class="text-main text-bold">Company Information</p>
+<hr>
 
+<div class="form-group">
+    <label class="col-sm-2 control-label">ID No.</label>
+    <div class="col-sm-6">
+        <input type="text" class="form-control text-uppercase" name="employee_number" value="{{ $model->employee_number }}">
+    </div>
+</div>
 
-                            <div class="form-group">
-                                <label class="col-sm-2 control-label">ID No.</label>
-                                <div class="col-sm-6">
-                                    <input type="text" class="form-control text-uppercase" name="employee_number" value="{{ $model->employee_number }}">
-                                </div>
-                            </div>
-
-                          <div class="form-group">
+<div class="form-group">
     <label class="col-sm-2 control-label">Position</label>
     <div class="col-sm-6">
         <select name="position" class="form-control">
-            <option></option> 
+            <option></option>
             @php
                 $positions = [
                     'SALES REPRESENTATIVE',
@@ -590,7 +619,6 @@ function captureImage() {
                     'ADMIN MANAGER',
                 ];
             @endphp
-
             @foreach ($positions as $positionOption)
                 <option value="{{ $positionOption }}" {{ $positionOption == $model->position ? 'selected' : '' }}>
                     {{ $positionOption }}
@@ -600,12 +628,11 @@ function captureImage() {
     </div>
 </div>
 
- <div class="form-group">
+<div class="form-group">
     <label class="col-sm-2 control-label">Station</label>
     <div class="col-sm-6">
         <select name="station" class="form-control">
             <option></option>
-
             @foreach (['BAYANAN STATION', 'TUNASAN STATION', 'NHA STATION', 'SUCAT STATION', 'ADMIN OFFICE'] as $station)
                 <option value="{{ $station }}" {{ isset($model) && $station == $model->station ? 'selected' : '' }}>
                     {{ $station }}
@@ -613,59 +640,64 @@ function captureImage() {
             @endforeach
         </select>
     </div>
-</div>         
+</div>
 
-                            <div class="form-group">
-                                <label class="col-sm-2 control-label">Field Coordinator</label>
-                                <div class="col-sm-6">
-                                    <select name="field_coordinator" id="" class="form-control">
-                                        <option></option>
+<div class="form-group">
+    <label class="col-sm-2 control-label">Field Coordinator</label>
+    <div class="col-sm-6">
+        <select name="field_coordinator" id="" class="form-control">
+            <option></option>
+            @php
+                $field_coordinators = \App\Models\FieldCoordinator::get();
+            @endphp
+            @foreach ($field_coordinators as $field_coordinator)
+                <option value="{{ $field_coordinator->value }}" {{ $field_coordinator->value == $model->field_coordinator ? 'selected' : '' }}>
+                    {{ $field_coordinator->name }}
+                </option>
+            @endforeach
+        </select>
+    </div>
+</div>
 
-                                        @php
-                                            $field_coordinators = \App\Models\FieldCoordinator::get();
-                                        @endphp
+<div class="form-group">
+    <label class="col-sm-2 control-label">Field Supervisor</label>
+    <div class="col-sm-6">
+        <input type="text" name="field_supervisor" class="form-control text-uppercase" value="{{ $model->field_supervisor }}">
+    </div>
+</div>
 
-                                        @foreach ($field_coordinators as $field_coordinator)
-                                            <option value="{{ $field_coordinator->value }}" {{ $field_coordinator->value == $model->field_coordinator ? 'selected' : '' }}>{{ $field_coordinator->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                            </div>
+<div class="form-group">
+    <label class="col-sm-2 control-label">Status</label>
+    <div class="col-sm-6">
+        <select name="status" class="form-control">
+            <option></option>
+            <option value="Active" {{ $model->status == 'Active' ? 'selected': '' }}>Active</option>
+            <option value="Inactive" {{ $model->status == 'Inactive' ? 'selected': '' }}>Inactive</option>
+            <option value="Lost ID" {{ $model->status == 'Lost ID' ? 'selected': '' }}>Lost ID</option>
+        </select>
+    </div>
+</div>
 
-                            <div class="form-group">
-                                <label class="col-sm-2 control-label">Field Supervisor</label>
-                                <div class="col-sm-6">
-                                    <input type="text" name="field_supervisor" class="form-control text-uppercase" value="{{ $model->field_supervisor }}">
-                                </div>
-                            </div>
+<div class="form-group">
+    <label class="col-sm-2 control-label">Remarks</label>
+    <div class="col-sm-6">
+        <input type="text" name="remarks" class="form-control text-uppercase" value="{{ $model->remarks }}">
+    </div>
+</div>
 
-                            <div class="form-group">
-                                <label class="col-sm-2 control-label">Status</label>
-                                <div class="col-sm-6">
-                                    <select name="status" class="form-control">
-                                        <option></option>
-                                        <option value="Active" {{ $model->status == 'Active' ? 'selected': '' }}>Active</option>
-                                        <option value="Inactive" {{ $model->status == 'Inactive' ? 'selected': '' }}>Inactive</option>
-                                        <option value="Lost ID" {{ $model->status == 'Lost ID' ? 'selected': '' }}>Lost ID</option>
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="col-sm-2 control-label">Remarks</label>
-                                <div class="col-sm-6">
-                                    <input type="text" name="remarks" class="form-control text-uppercase" value="{{ $model->remarks }}">
-                                </div>
-                            </div>
-                            
-                        
-                            
-                  <div class="form-group">
-                                <label class="col-sm-2 control-label">Date Hired</label>
-                                <div class="col-sm-6">
-                                    <input type="date" name="date_hired" class="form-control" value="{{ optional($model->created_at)->toDateString() }}" readonly>
-                                </div>
-                            </div>
+<div class="form-group">
+    <label class="col-sm-2 control-label">Date Hired</label>
+    <div class="col-sm-6">
+        <input type="date" name="date_hired" class="form-control" value="{{ optional($model->created_at)->toDateString() }}" readonly>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="col-sm-2 control-label">Last ID Print Date</label>
+    <div class="col-sm-6">
+        <input type="date" id="last_print_date" name="last_print_date" class="form-control" value="{{ optional($model->last_print_date)->toDateString() }}" readonly>
+    </div>
+</div>
 
                             <p class="text-main text-bold">Personal Information</p>
                             <hr>
@@ -793,9 +825,38 @@ $(function (namespace, $) {
         this._Avatar();
         this._Datepicker();
         this._validate();
+        
+        // Set initial last_print_date value on page load
+        let initialDate = "{{ $model->last_print_date ? $model->last_print_date->toDateString() : '' }}";
+        if (initialDate) {
+            $('#last_print_date').val(initialDate);
+        }
     }
 
     p._QR = function () {
+         // Preview QR code when modal opens
+        $('#modal-qr_code').on('shown.bs.modal', function () {
+            var agentId = {{ $model->id }};
+            $.ajax({
+                url: '/admin/employees/' + agentId + '/generate-qr-token', // Call generateQrToken
+                method: 'POST',
+                headers: {
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+
+                success: function(response) {
+                    var qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent("http://greatmindstl.com/agent/" + response.employee_number + "?token=" + response.token);
+                    currentQrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=220x180&data=" + encodeURIComponent("http://greatmindstl.com/agent/" + response.employee_number + "?token=" + response.token); // Update global QR URL
+                    $('#qr-preview').attr('src', qrUrl).show();
+                    $('#qr-code-overlay').attr('src', currentQrCodeUrl).show(); // Update ID modal QR
+                    $('#modal-qr_code').modal('show');
+                },
+                error: function(xhr) {
+                    alert('Failed to load QR code preview: ' + xhr.responseText);
+                }
+            });
+        });
+        
         $('#btn-download_qr').click(function () {
             axios({
                 method: 'POST',

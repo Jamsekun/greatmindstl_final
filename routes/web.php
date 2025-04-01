@@ -264,6 +264,12 @@ Route::group([
         
         Route::get('/admin/agents/generate-id-image/{id}', [App\Http\Controllers\AgentController::class, 'generateIdImage'])
             ->name('admin.agents.generateIdImage');
+            
+        Route::post('{id}/generate-qr-token', [App\Http\Controllers\AgentController::class, 'generateQrToken'])
+        ->name('admin.agents.generateQrToken');
+        
+        Route::post('update-last-print-date', [App\Http\Controllers\AgentController::class, 'updateLastPrintDate'])
+        ->name('admin.agents.updateLastPrintDate');
 
     });
 

@@ -34,7 +34,8 @@ class UserInformation extends Model
         'position',
         'is_agent',
         'status',
-        'signature'
+        'signature',
+        'last_print_date'
     ];
 
     protected static $logAttributes  = [
@@ -52,6 +53,14 @@ class UserInformation extends Model
         'user_id',
         'created_at',
         'updated_at'
+    ];
+    
+    // Add this casting
+    protected $casts = [
+        'last_print_date' => 'date', // Cast to Carbon instance
+        'birthday' => 'date',        // If not already cast
+        'created_at' => 'datetime',  // Ensure created_at is cast too
+        'updated_at' => 'datetime',
     ];
 
     protected static $logOnlyDirty = true;

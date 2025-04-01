@@ -87,7 +87,7 @@ class AgentController extends Controller
             $query->where('id', $id);
         })
         ->firstOrFail();
-
+        \Log::info('Last print date in edit: ' . $model->last_print_date); // Add this
        return view('admin.agents.edit', compact('model'));
     }
 
@@ -239,11 +239,22 @@ public function generateIdImage($id)
 
     public function show($id)
     {
-        $model = \App\Models\UserInformation::where(function ($query) use ($id) {
-            $query->where('employee_number', $id);
-        })
-        ->firstOrFail();
-
+        $model = \App\Models\UserInformation::where('employee_number', $id)->firstOrFail();
+        $token = request()->query('token');
+    
+        // Check employee status
+        if ($model->status === 'Lost ID' || $model->status === 'Inactive') {
+            return response('Access denied: This ID is no longer valid', 403);
+        }
+    
+        // For active employees, require a valid token
+        if ($model->status === 'Active') {
+            if (empty($token) || $token !== $model->latest_qr_token) {
+                return response('Access denied: Invalid or outdated ID', 403);
+            }
+        }
+    
+        // If valid, redirect or show the agent page
         return view('agents.index', compact('model'));
     }
 
@@ -291,16 +302,38 @@ public function generateIdImage($id)
     }
 
     public function qr_code(Request $request, $id)
+        {
+            if ($request->ajax()) {
+                $model = \App\Models\UserInformation::findOrFail($id);
+                
+                // Use the latest_qr_token if it exists, otherwise generate a new one
+                if (!$model->latest_qr_token) {
+                    $model->latest_qr_token = \Illuminate\Support\Str::random(32);
+                    $model->save();
+                }
+        
+                // Generate QR code with token
+                $qrData = "http://greatmindstl.com/agent/{$model->employee_number}?token={$model->latest_qr_token}";
+                $filePath = "resources/assets/image/user/qrcode_{$model->id}.svg"; // Unique file per employee
+                \QR::generate($qrData, $filePath);
+        
+                return response()->json([
+                    'url' => asset("assets/image/user/qrcode_{$model->id}.svg"),
+                    'title' => $model->employee_number
+                ]);
+            }
+    }
+    
+    public function generateQrToken(Request $request, $id)
     {
-        if($request->ajax()) {
-            $model = \App\Models\UserInformation::findOrFail($id);
-                     \QR::generate("http://greatmindstl.com/agent/{$model->employee_number}", 'resources/assets/image/user/qrcode.svg');
-
-            return response()->json([
-                'url' => asset('assets/image/user/qrcode.svg'),
-                'title' => $model->employee_number
-            ]);
-        }
+        $model = \App\Models\UserInformation::findOrFail($id);
+        $model->latest_qr_token = \Illuminate\Support\Str::random(32); // Generate a 32-char random token
+        $model->save();
+    
+        return response()->json([
+            'token' => $model->latest_qr_token,
+            'employee_number' => $model->employee_number
+        ]);
     }
 
     public function import(Request $request)
@@ -318,6 +351,23 @@ public function generateIdImage($id)
         if($request->ajax()) {
             return \App\Models\UserInformation::where('is_agent', 1)->count();
         }
+    }
+    
+    public function updateLastPrintDate(Request $request)
+    {
+        $this->validate($request, [
+            'id' => 'required|exists:users_informations,id',
+            'last_print_date' => 'required|date|date_format:Y-m-d'
+        ]);
+
+        $model = \App\Models\UserInformation::findOrFail($request->id);
+        $model->last_print_date = $request->last_print_date;
+        $model->save();
+
+        return response()->json([
+            'message' => 'Last print date updated successfully',
+            'last_print_date' => $model->last_print_date
+        ]);
     }
 
 }
